@@ -4,6 +4,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
+  // sanitize text to avoid HTML injection
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
@@ -13,6 +23,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // Clear loading message
       activitiesList.innerHTML = "";
 
+      // Reset select options (keep placeholder)
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
+
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
         const activityCard = document.createElement("div");
@@ -21,13 +34,50 @@ document.addEventListener("DOMContentLoaded", () => {
         const spotsLeft = details.max_participants - details.participants.length;
 
         activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
+          <h4>${escapeHtml(name)}</h4>
+          <p>${escapeHtml(details.description)}</p>
+          <p><strong>Schedule:</strong> ${escapeHtml(details.schedule)}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+
+          <div class="participants">
+            <h5>Participants</h5>
+              ${details.participants && details.participants.length > 0
+                ? `<ul>${details.participants.map(p => `<li><span class="participant-email">${escapeHtml(p)}</span><button class="delete-participant" data-activity="${escapeHtml(name)}" data-email="${escapeHtml(p)}" aria-label="Unregister" title="Unregister">✖</button></li>`).join("")}</ul>`
+                : `<p class="muted">No participants yet</p>`}
+          </div>
         `;
 
         activitiesList.appendChild(activityCard);
+
+        // Attach delete handlers for participant unregister buttons
+        activityCard.querySelectorAll(".delete-participant").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            e.preventDefault();
+
+            const activityName = btn.dataset.activity;
+            const email = btn.dataset.email;
+
+            if (!activityName || !email) return;
+
+            try {
+              const resp = await fetch(`/activities/${encodeURIComponent(activityName)}/unregister?email=${encodeURIComponent(email)}`, {
+                method: "DELETE",
+              });
+
+              const result = await resp.json();
+
+              if (resp.ok) {
+                // Refresh the activities list to reflect the change
+                fetchActivities();
+              } else {
+                alert(result.detail || "Failed to unregister participant");
+              }
+            } catch (err) {
+              console.error("Error unregistering participant:", err);
+              alert("Failed to unregister participant. Try again.");
+            }
+          });
+        });
 
         // Add option to select dropdown
         const option = document.createElement("option");
@@ -57,26 +107,29 @@ document.addEventListener("DOMContentLoaded", () => {
       );
 
       const result = await response.json();
-
       if (response.ok) {
         messageDiv.textContent = result.message;
-        messageDiv.className = "success";
+        messageDiv.classList.remove("hidden", "error");
+        messageDiv.classList.add("message", "success");
         signupForm.reset();
+
+        // Refresh activities so the new participant appears immediately
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
+        messageDiv.classList.remove("hidden", "success");
+        messageDiv.classList.add("message", "error");
       }
 
-      messageDiv.classList.remove("hidden");
-
-      // Hide message after 5 seconds
+      // Auto-hide message after 5 seconds
       setTimeout(() => {
         messageDiv.classList.add("hidden");
+        messageDiv.classList.remove("message", "success", "error");
       }, 5000);
     } catch (error) {
       messageDiv.textContent = "Failed to sign up. Please try again.";
-      messageDiv.className = "error";
-      messageDiv.classList.remove("hidden");
+      messageDiv.classList.remove("hidden", "success");
+      messageDiv.classList.add("message", "error");
       console.error("Error signing up:", error);
     }
   });
