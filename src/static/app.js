@@ -41,13 +41,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
           <div class="participants">
             <h5>Participants</h5>
-            ${details.participants && details.participants.length > 0
-              ? `<ul>${details.participants.map(p => `<li>${escapeHtml(p)}</li>`).join("")}</ul>`
-              : `<p class="muted">No participants yet</p>`}
+              ${details.participants && details.participants.length > 0
+                ? `<ul>${details.participants.map(p => `<li><span class="participant-email">${escapeHtml(p)}</span><button class="delete-participant" data-activity="${escapeHtml(name)}" data-email="${escapeHtml(p)}" aria-label="Unregister" title="Unregister">✖</button></li>`).join("")}</ul>`
+                : `<p class="muted">No participants yet</p>`}
           </div>
         `;
 
         activitiesList.appendChild(activityCard);
+
+        // Attach delete handlers for participant unregister buttons
+        activityCard.querySelectorAll(".delete-participant").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            e.preventDefault();
+
+            const activityName = btn.dataset.activity;
+            const email = btn.dataset.email;
+
+            if (!activityName || !email) return;
+
+            try {
+              const resp = await fetch(`/activities/${encodeURIComponent(activityName)}/unregister?email=${encodeURIComponent(email)}`, {
+                method: "DELETE",
+              });
+
+              const result = await resp.json();
+
+              if (resp.ok) {
+                // Refresh the activities list to reflect the change
+                fetchActivities();
+              } else {
+                alert(result.detail || "Failed to unregister participant");
+              }
+            } catch (err) {
+              console.error("Error unregistering participant:", err);
+              alert("Failed to unregister participant. Try again.");
+            }
+          });
+        });
 
         // Add option to select dropdown
         const option = document.createElement("option");
@@ -77,26 +107,29 @@ document.addEventListener("DOMContentLoaded", () => {
       );
 
       const result = await response.json();
-
       if (response.ok) {
         messageDiv.textContent = result.message;
-        messageDiv.className = "success";
+        messageDiv.classList.remove("hidden", "error");
+        messageDiv.classList.add("message", "success");
         signupForm.reset();
+
+        // Refresh activities so the new participant appears immediately
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
+        messageDiv.classList.remove("hidden", "success");
+        messageDiv.classList.add("message", "error");
       }
 
-      messageDiv.classList.remove("hidden");
-
-      // Hide message after 5 seconds
+      // Auto-hide message after 5 seconds
       setTimeout(() => {
         messageDiv.classList.add("hidden");
+        messageDiv.classList.remove("message", "success", "error");
       }, 5000);
     } catch (error) {
       messageDiv.textContent = "Failed to sign up. Please try again.";
-      messageDiv.className = "error";
-      messageDiv.classList.remove("hidden");
+      messageDiv.classList.remove("hidden", "success");
+      messageDiv.classList.add("message", "error");
       console.error("Error signing up:", error);
     }
   });
